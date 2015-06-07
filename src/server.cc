@@ -42,9 +42,13 @@ public:
   }
 private:
   HTTPConnectionHandler(HTTPServer *server, int fd, struct sockaddr_storage their_addr, socklen_t sin_size)
-    : server(server), fd(fd), their_addr(their_addr), sin_size(sin_size)
+    : server(server), fd(fd), their_addr(their_addr), sin_size(sin_size), buffer(nullptr), buffer_size(0), buffer_maxsize(0)
   {
-  
+    printf("This is %p\n", this);
+    EV_P = ev_default_loop(0);
+    this->httpconnectionhandler_watcher.handler = this;
+    ev_io_init(&this->httpconnectionhandler_watcher, HTTPConnectionHandler::readable, this->fd, EV_READ);
+    ev_io_start(EV_A_ (struct ev_io*)&this->httpconnectionhandler_watcher);
   }
   struct httpconnectionhandler_watcher {
     EV_WATCHER_LIST (ev_io)
@@ -56,19 +60,21 @@ private:
   } httpconnectionhandler_watcher;
   void Close()
   {
+    printf("Dead\n");
     EV_P = ev_default_loop(0);
     ev_io_stop (EV_A_ (struct ev_io*)&this->httpconnectionhandler_watcher);
     delete this;
   }
   void read()
   {
-    puts("data\n");
+    puts("Reading data");
     if (this->buffer_maxsize - this->buffer_size < 4096)
     {
       this->buffer_maxsize += 4096;
       this->buffer = (char*)realloc(this->buffer, this->buffer_maxsize);
     }
     int n = ::read(fd, this->buffer + this->buffer_size, 4096);
+    printf("Read %d bytes\n", n);
     if(n == 0)
     {
       puts("Read data:\n\n");
@@ -84,6 +90,7 @@ private:
     {
       this->buffer_size += n;
     }
+    printf("%.*s", this->buffer_size, this->buffer);
   }
   static void readable(EV_P_ struct ev_io *generic_watcher, int revents)
   {
@@ -152,11 +159,13 @@ public:
 
     freeaddrinfo(servinfo); // all done with this structure
 
+    printf("Listening on socket fd %d\n", this->listenfd);
     if (listen(this->listenfd, this->backlog) == -1) {
         throw new HTTPException("Could not listen to socket.");
         return;
     }
 
+  this->httpserver_watcher.server = this;
   ev_io_init(&this->httpserver_watcher, HTTPServer::incomingConnection, this->listenfd, EV_READ);
   ev_io_start(EV_A_ (struct ev_io*)&this->httpserver_watcher);
   }
@@ -179,8 +188,10 @@ private:
   static void incomingConnection(EV_P_ struct ev_io *generic_watcher, int revents)
   {
     struct sockaddr_storage their_addr; // connector's address information
-	socklen_t sin_size;
+    socklen_t sin_size = sizeof their_addr;
+    printf("Accepting on socket fd %d\n", generic_watcher->fd);
     int fd = accept(generic_watcher->fd, (struct sockaddr *)&their_addr, &sin_size);
+    printf("Accepted connection on fd %d\n", fd);
     ((struct httpserver_watcher*) generic_watcher)->server->HandleConnection(fd, their_addr, sin_size);
   }
 };
