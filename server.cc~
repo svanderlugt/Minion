@@ -9,6 +9,8 @@
 #include <arpa/inet.h>
 #include <string.h>
 #include <unistd.h>
+#include <string>
+#include <iostream>
 
 #define ASSERT(pred, code, msg) \
 if(!(pred)){ \
@@ -42,7 +44,7 @@ public:
   }
 private:
   HTTPConnectionHandler(HTTPServer *server, int fd, struct sockaddr_storage their_addr, socklen_t sin_size)
-    : server(server), fd(fd), their_addr(their_addr), sin_size(sin_size), buffer(nullptr), buffer_size(0), buffer_maxsize(0)
+    : server(server), fd(fd), their_addr(their_addr), sin_size(sin_size)
   {
     printf("This is %p\n", this);
     EV_P = ev_default_loop(0);
@@ -68,17 +70,12 @@ private:
   void read()
   {
     puts("Reading data");
-    if (this->buffer_maxsize - this->buffer_size < 4096)
-    {
-      this->buffer_maxsize += 4096;
-      this->buffer = (char*)realloc(this->buffer, this->buffer_maxsize);
-    }
-    int n = ::read(fd, this->buffer + this->buffer_size, 4096);
+    char tmp_buf[4096];
+    int n = ::read(fd, tmp_buf, sizeof tmp_buf);
     printf("Read %d bytes\n", n);
     if(n == 0)
     {
-      puts("Read data:\n\n");
-      puts(this->buffer);
+      puts("Done reading data.\n");
       Close();
     }
     else if (n < 0)
@@ -88,9 +85,9 @@ private:
     }
     else
     {
-      this->buffer_size += n;
+      this->buffer.append(tmp_buf, n);
     }
-    printf("Read: %.*s", this->buffer_size, this->buffer);
+    cout << this->buffer << endl;
   }
   static void readable(EV_P_ struct ev_io *generic_watcher, int revents)
   {
@@ -100,9 +97,7 @@ private:
   int fd;
   struct sockaddr_storage their_addr;
   socklen_t sin_size;
-  char *buffer = nullptr;
-  uint64_t buffer_maxsize;
-  uint64_t buffer_size;
+  std::string buffer;
 };
 
 class HTTPServer
